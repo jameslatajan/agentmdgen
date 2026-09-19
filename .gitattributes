@@ -1,0 +1,6 @@
+# The masters are copied verbatim into project AGENTS.md files, and the
+# script writes LF. Keep everything LF so checkouts don't introduce CRLF.
+* text=auto eol=lf
+*.md   text eol=lf
+*.ps1  text eol=lf
+*.json text eol=lf
