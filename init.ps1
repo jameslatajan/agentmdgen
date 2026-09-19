@@ -19,6 +19,7 @@ param(
 . (Join-Path $PSScriptRoot 'common.ps1')
 
 $ok = $true
+$needsScan = $false
 function Fail($m) { Write-Host "  FAIL  $m" -ForegroundColor Red;    $script:ok = $false }
 function Warn($m) { Write-Host "  WARN  $m" -ForegroundColor Yellow }
 function Pass($m) { Write-Host "  ok    $m" -ForegroundColor Green }
@@ -38,7 +39,8 @@ if ($Scan) {
   while ($queue.Count) {
     $n = $queue.Dequeue()
     $t = Get-ProjectType $n.path
-    if ($t) { $found[$t].Add(($n.path -replace '\','/')) }
+    # .Replace is literal; -replace would treat a lone backslash as a regex.
+    if ($t) { $found[$t].Add($n.path.Replace('\','/')) }
     if ($n.depth -ge $Depth) { continue }
     foreach ($c in Get-ChildItem $n.path -Directory -ErrorAction SilentlyContinue) {
       if ($PruneDirs -contains $c.Name) { continue }
@@ -53,11 +55,10 @@ if ($Scan) {
       Warn "$($Lists[$t]) exists, not overwritten ($($list.Count) found). Re-run with -Force."
       continue
     }
-    # ConvertTo-Json flattens a 1-element array, so force an array shape.
-    $json = if ($list.Count -eq 1) { "[`n  `"$($list[0])`"`n]" }
-            else { $list | ConvertTo-Json }
-    Set-Content -Path $out -Value $json -Encoding utf8
-    Pass "$($Lists[$t]): $($list.Count) projects"
+    # -AsArray keeps [ ] even for zero or one entry (a scalar would serialise
+    # as a bare string, and indexing it would yield a character).
+    $list | ConvertTo-Json -AsArray | Set-Content -Path $out -Encoding utf8
+    Pass "$($Lists[$t]): $(@($list).Count) projects"
   }
 
   Write-Host "`nReview the lists, remove anything you don't want synced, then:"
@@ -91,7 +92,7 @@ if ((Test-Path $php) -and (Test-Path $f7) -and
 Write-Host "`nProject lists"
 foreach ($t in 'php','f7') {
   $f = Join-Path $PSScriptRoot $Lists[$t]
-  if (-not (Test-Path $f)) { Warn "$($Lists[$t]) missing - run: .\init.ps1 -Scan <root>"; continue }
+  if (-not (Test-Path $f)) { Warn "$($Lists[$t]) missing - run: .\init.ps1 -Scan <root>"; $needsScan = $true; continue }
   try { $dirs = @(Get-Content $f -Raw | ConvertFrom-Json) }
   catch { Fail "$($Lists[$t]) is not valid JSON"; continue }
 
@@ -111,5 +112,14 @@ if ($LASTEXITCODE -eq 0) { Pass 'sync-agents.ps1 -SelfTest' }
 else { Fail 'sync-agents.ps1 -SelfTest failed - run it directly for detail' }
 
 Write-Host ""
-if ($ok) { Write-Host "All checks passed. Next: .\sync-agents.ps1 -DryRun" -ForegroundColor Green }
-else     { Write-Host "Fix the failures above before syncing." -ForegroundColor Red; exit 1 }
+if (-not $ok) {
+  Write-Host "Fix the failures above before syncing." -ForegroundColor Red; exit 1
+}
+elseif ($needsScan) {
+  # Nothing to sync yet - don't send a new user to a no-op run.
+  Write-Host "Setup incomplete. Next: .\init.ps1 -Scan <path-to-your-projects>" -ForegroundColor Yellow
+  exit 2
+}
+else {
+  Write-Host "All checks passed. Next: .\sync-agents.ps1 -DryRun" -ForegroundColor Green
+}
