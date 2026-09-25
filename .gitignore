@@ -34,3 +34,7 @@ ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
 .DS_Store
+
+# --- Source rule sets (org-specific, kept local) ---
+AGENTS-PHP.md
+AGENTS-F7V5.md
